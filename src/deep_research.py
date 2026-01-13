@@ -89,11 +89,48 @@ class SerpQuery:
 
 # Initialize Firecrawl
 CONCURRENCY_LIMIT = int(os.getenv("FIRECRAWL_CONCURRENCY", "2"))
+SCRAPE_TIMEOUT = int(os.getenv("FIRECRAWL_TIMEOUT", "30000"))  # ms
 
 firecrawl = FirecrawlApp(
     api_key=os.getenv("FIRECRAWL_KEY", ""),
     api_url=os.getenv("FIRECRAWL_BASE_URL")
 )
+
+# Domains to skip (social media, login walls, etc.)
+SKIP_DOMAINS = {
+    "facebook.com", "www.facebook.com",
+    "twitter.com", "www.twitter.com", "x.com",
+    "instagram.com", "www.instagram.com",
+    "linkedin.com", "www.linkedin.com",
+    "tiktok.com", "www.tiktok.com",
+    "pinterest.com", "www.pinterest.com",
+    "reddit.com", "www.reddit.com",  # Often blocks scraping
+}
+
+# File extensions to skip (large files, non-text content)
+SKIP_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar"}
+
+
+def should_skip_url(url: str) -> bool:
+    """Check if URL should be skipped based on domain or extension."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+
+        # Check domain
+        domain = parsed.netloc.lower()
+        if domain in SKIP_DOMAINS:
+            return True
+
+        # Check extension
+        path = parsed.path.lower()
+        for ext in SKIP_EXTENSIONS:
+            if path.endswith(ext):
+                return True
+
+        return False
+    except Exception:
+        return False
 
 
 async def generate_serp_queries(
@@ -432,13 +469,22 @@ async def deep_research(
                 for item in data_items:
                     if "url" in item and item["url"]:
                         url = item["url"]
+
+                        # Skip problematic URLs (social media, PDFs, etc.)
+                        if should_skip_url(url):
+                            log(f"Skipping URL (filtered): {url}")
+                            continue
+
                         new_urls.append(url)
-                        
+
                         # Scrape the content from the URL
                         try:
                             # Add small delay to avoid rate limits
                             await asyncio.sleep(1)
-                            scrape_result = firecrawl.scrape_url(url)
+                            scrape_result = firecrawl.scrape_url(
+                                url,
+                                params={"timeout": SCRAPE_TIMEOUT}
+                            )
                             if hasattr(scrape_result, 'markdown') and scrape_result.markdown:
                                 scraped_contents.append({
                                     "url": url,
@@ -452,7 +498,13 @@ async def deep_research(
                                         "markdown": scrape_dict["markdown"]
                                     })
                         except Exception as scrape_error:
-                            log(f"Error scraping {url}: {scrape_error}")
+                            error_msg = str(scrape_error).lower()
+                            if "timeout" in error_msg:
+                                log(f"Timeout scraping {url} (try increasing FIRECRAWL_TIMEOUT)")
+                            elif "pdf" in error_msg:
+                                log(f"Skipping large PDF: {url}")
+                            else:
+                                log(f"Error scraping {url}: {scrape_error}")
                             continue
                 
                 log(f"Found {len(new_urls)} URLs, successfully scraped {len(scraped_contents)} pages")
