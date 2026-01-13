@@ -575,7 +575,7 @@ async def deep_research(
                             await asyncio.sleep(1)
                             scrape_result = firecrawl.scrape_url(
                                 url,
-                                params={"timeout": SCRAPE_TIMEOUT}
+                                timeout=SCRAPE_TIMEOUT
                             )
                             if hasattr(scrape_result, 'markdown') and scrape_result.markdown:
                                 scraped_contents.append({
