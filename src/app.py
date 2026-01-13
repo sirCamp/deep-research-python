@@ -92,12 +92,19 @@ async def run_research(session_id, query, breadth, depth, is_report):
             }
             
             try:
+                log_to_queue(session_id, 'info', f'Generating report from {len(research_result.learnings)} learnings...')
                 response = generate_object(system_prompt(), report_prompt, schema)
+                log_to_queue(session_id, 'info', f'Response received, parsing...')
                 result = parse_response(response)
                 final_output = result.get("report_markdown", "")
+                log_to_queue(session_id, 'info', f'Report generated: {len(final_output)} chars')
+                if not final_output:
+                    log_to_queue(session_id, 'warning', f'Empty report! Result keys: {result.keys() if isinstance(result, dict) else "not a dict"}')
             except Exception as e:
+                import traceback
                 log_to_queue(session_id, 'error', f'Error generating report: {str(e)}')
-                final_output = "Error generating report"
+                log_to_queue(session_id, 'error', f'Traceback: {traceback.format_exc()}')
+                final_output = f"Error generating report: {str(e)}"
         else:
             final_output = await write_final_answer(query, research_result.learnings)
         
@@ -109,12 +116,14 @@ async def run_research(session_id, query, breadth, depth, is_report):
             log_to_queue(session_id, 'warning', f'Could not generate feedback: {str(e)}')
         
         # Send final result (sources separate from output, include provenance)
+        log_to_queue(session_id, 'info', f'Sending complete message with {len(final_output)} chars output...')
         log_to_queue(session_id, 'complete', {
             'output': final_output,
             'learnings': research_result.learnings,
             'visited_urls': research_result.visited_urls,
             'learnings_with_provenance': research_result.learnings_with_provenance or []
         })
+        log_to_queue(session_id, 'info', 'Complete message sent!')
         
     except Exception as e:
         log_to_queue(session_id, 'error', str(e))
