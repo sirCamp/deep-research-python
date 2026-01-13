@@ -176,6 +176,7 @@ class AIProvider:
 
         response_body = json.loads(response["body"].read())
         print(f"DEBUG: Bedrock response stop_reason: {response_body.get('stop_reason')}")
+        print(f"DEBUG: Bedrock full response: {json.dumps(response_body, indent=2)[:2000]}")
 
         # Parse response based on whether we used tools
         if schema and response_body.get("content"):
