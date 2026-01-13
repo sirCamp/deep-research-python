@@ -69,9 +69,13 @@ class AIProvider:
         if BEDROCK_AVAILABLE and os.getenv("AWS_BEDROCK_ENABLED", "").lower() == "true":
             try:
                 region = os.getenv("AWS_REGION", "us-east-1")
+                # Increase timeouts for long-running operations like report generation
+                bedrock_timeout = int(os.getenv("AWS_BEDROCK_TIMEOUT", "300"))  # 5 minutes default
                 config = Config(
                     region_name=region,
-                    retries={"max_attempts": 3, "mode": "adaptive"}
+                    retries={"max_attempts": 3, "mode": "adaptive"},
+                    read_timeout=bedrock_timeout,
+                    connect_timeout=60
                 )
                 self.bedrock_client = boto3.client(
                     "bedrock-runtime",
