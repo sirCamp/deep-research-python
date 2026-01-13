@@ -318,12 +318,18 @@ async def process_serp_result(
     
     try:
         response = generate_object(system_prompt(), prompt, schema, timeout=60)
-        
+
         result = parse_response(response)
-        
+
+        # Ensure learnings is always a list (Bedrock might return string)
         learnings = result.get("learnings", [])
+        if isinstance(learnings, str):
+            learnings = [learnings] if learnings else []
+
         follow_up_questions = result.get("follow_up_questions", [])
-        
+        if isinstance(follow_up_questions, str):
+            follow_up_questions = [follow_up_questions] if follow_up_questions else []
+
         log(f"Created {len(learnings)} learnings", learnings)
         
         # Track provenance if enabled
@@ -635,8 +641,17 @@ async def deep_research(
                     num_follow_up_questions=new_breadth,
                     track_provenance=True
                 )
-                
-                all_learnings = learnings + processed["learnings"]
+
+                # Ensure learnings is a list (Bedrock might return string)
+                proc_learnings = processed.get("learnings", [])
+                if isinstance(proc_learnings, str):
+                    proc_learnings = [proc_learnings] if proc_learnings else []
+
+                proc_follow_up = processed.get("follow_up_questions", [])
+                if isinstance(proc_follow_up, str):
+                    proc_follow_up = [proc_follow_up] if proc_follow_up else []
+
+                all_learnings = learnings + proc_learnings
                 all_urls = visited_urls + new_urls
                 all_provenance = processed.get("learnings_with_provenance", [])
                 
@@ -652,7 +667,7 @@ async def deep_research(
                     
                     next_query = f"""
 Previous research goal: {serp_query.research_goal}
-Follow-up research directions: {chr(10).join(processed["follow_up_questions"])}
+Follow-up research directions: {chr(10).join(proc_follow_up)}
                     """.strip()
                     
                     deeper_result = await deep_research(
