@@ -142,9 +142,12 @@ class AIProvider:
 
         messages = [{"role": "user", "content": user_prompt}]
 
+        # Use higher max_tokens for report generation (reports need more space)
+        max_tokens = int(os.getenv("AWS_BEDROCK_MAX_TOKENS", "16384"))
+
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
             "system": system_prompt,
             "messages": messages
         }
@@ -158,31 +161,44 @@ class AIProvider:
             }]
             request_body["tool_choice"] = {"type": "tool", "name": "respond_with_structure"}
 
-        response = self.bedrock_client.invoke_model(
-            modelId=self.bedrock_model,
-            body=json.dumps(request_body),
-            contentType="application/json",
-            accept="application/json"
-        )
+        print(f"DEBUG: Calling Bedrock model {self.bedrock_model} with max_tokens={max_tokens}")
+
+        try:
+            response = self.bedrock_client.invoke_model(
+                modelId=self.bedrock_model,
+                body=json.dumps(request_body),
+                contentType="application/json",
+                accept="application/json"
+            )
+        except Exception as e:
+            print(f"ERROR: Bedrock invoke_model failed: {e}")
+            raise
 
         response_body = json.loads(response["body"].read())
+        print(f"DEBUG: Bedrock response stop_reason: {response_body.get('stop_reason')}")
 
         # Parse response based on whether we used tools
         if schema and response_body.get("content"):
             for content_block in response_body["content"]:
                 if content_block.get("type") == "tool_use":
-                    return content_block.get("input", {})
+                    result = content_block.get("input", {})
+                    print(f"DEBUG: Extracted tool_use input with {len(str(result))} chars")
+                    return result
 
         # Fallback to text content
+        print(f"DEBUG: No tool_use found, falling back to text content")
         if response_body.get("content"):
             for content_block in response_body["content"]:
                 if content_block.get("type") == "text":
                     text = content_block.get("text", "")
+                    print(f"DEBUG: Got text content with {len(text)} chars")
                     try:
                         return json.loads(text)
                     except json.JSONDecodeError:
+                        print(f"DEBUG: Text is not JSON, returning as content")
                         return {"content": text}
 
+        print(f"DEBUG: No content found, returning raw response_body")
         return response_body
 
     def generate_object(self, system_prompt: str, user_prompt: str, schema: dict, timeout: int = 60):
