@@ -96,41 +96,98 @@ firecrawl = FirecrawlApp(
     api_url=os.getenv("FIRECRAWL_BASE_URL")
 )
 
-# Domains to skip (social media, login walls, etc.)
-SKIP_DOMAINS = {
-    "facebook.com", "www.facebook.com",
-    "twitter.com", "www.twitter.com", "x.com",
-    "instagram.com", "www.instagram.com",
-    "linkedin.com", "www.linkedin.com",
-    "tiktok.com", "www.tiktok.com",
-    "pinterest.com", "www.pinterest.com",
-    "reddit.com", "www.reddit.com",  # Often blocks scraping
-}
+# File extensions that need special handling (download + extract text)
+DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx"}
 
-# File extensions to skip (large files, non-text content)
-SKIP_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar"}
+# File extensions to skip (binary, archives - can't extract useful text)
+SKIP_EXTENSIONS = {".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dmg", ".iso"}
+
+
+def get_url_extension(url: str) -> str:
+    """Get file extension from URL."""
+    try:
+        from urllib.parse import urlparse
+        path = urlparse(url).path.lower()
+        for ext in DOCUMENT_EXTENSIONS | SKIP_EXTENSIONS:
+            if path.endswith(ext):
+                return ext
+        return ""
+    except Exception:
+        return ""
 
 
 def should_skip_url(url: str) -> bool:
-    """Check if URL should be skipped based on domain or extension."""
+    """Check if URL should be skipped (only binary/archive files)."""
+    ext = get_url_extension(url)
+    return ext in SKIP_EXTENSIONS
+
+
+def extract_text_from_pdf(content: bytes) -> str:
+    """Extract text from PDF bytes."""
     try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
+        from pypdf import PdfReader
+        from io import BytesIO
 
-        # Check domain
-        domain = parsed.netloc.lower()
-        if domain in SKIP_DOMAINS:
-            return True
+        reader = PdfReader(BytesIO(content))
+        text_parts = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                text_parts.append(text)
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        log(f"Error extracting PDF text: {e}")
+        return ""
 
-        # Check extension
-        path = parsed.path.lower()
-        for ext in SKIP_EXTENSIONS:
-            if path.endswith(ext):
-                return True
 
-        return False
-    except Exception:
-        return False
+def extract_text_from_docx(content: bytes) -> str:
+    """Extract text from DOCX bytes."""
+    try:
+        from docx import Document
+        from io import BytesIO
+
+        doc = Document(BytesIO(content))
+        text_parts = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                text_parts.append(para.text)
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        log(f"Error extracting DOCX text: {e}")
+        return ""
+
+
+def download_and_extract_document(url: str) -> str:
+    """Download document and extract text based on file type."""
+    try:
+        import requests
+
+        ext = get_url_extension(url)
+        if not ext:
+            return ""
+
+        log(f"Downloading document: {url}")
+        response = requests.get(url, timeout=30, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; ResearchBot/1.0)"
+        })
+        response.raise_for_status()
+        content = response.content
+
+        if ext == ".pdf":
+            text = extract_text_from_pdf(content)
+            if text:
+                log(f"Extracted {len(text)} chars from PDF")
+            return text
+        elif ext in {".doc", ".docx"}:
+            text = extract_text_from_docx(content)
+            if text:
+                log(f"Extracted {len(text)} chars from DOCX")
+            return text
+
+        return ""
+    except Exception as e:
+        log(f"Error downloading document {url}: {e}")
+        return ""
 
 
 async def generate_serp_queries(
@@ -470,14 +527,30 @@ async def deep_research(
                     if "url" in item and item["url"]:
                         url = item["url"]
 
-                        # Skip problematic URLs (social media, PDFs, etc.)
+                        # Skip binary/archive files
                         if should_skip_url(url):
-                            log(f"Skipping URL (filtered): {url}")
+                            log(f"Skipping binary file: {url}")
                             continue
 
                         new_urls.append(url)
+                        ext = get_url_extension(url)
 
-                        # Scrape the content from the URL
+                        # Handle documents (PDF, DOCX) with direct download + extraction
+                        if ext in DOCUMENT_EXTENSIONS:
+                            try:
+                                text = download_and_extract_document(url)
+                                if text:
+                                    scraped_contents.append({
+                                        "url": url,
+                                        "markdown": text
+                                    })
+                                else:
+                                    log(f"No text extracted from {url}")
+                            except Exception as doc_error:
+                                log(f"Error processing document {url}: {doc_error}")
+                            continue
+
+                        # Scrape web pages with Firecrawl
                         try:
                             # Add small delay to avoid rate limits
                             await asyncio.sleep(1)
@@ -501,8 +574,6 @@ async def deep_research(
                             error_msg = str(scrape_error).lower()
                             if "timeout" in error_msg:
                                 log(f"Timeout scraping {url} (try increasing FIRECRAWL_TIMEOUT)")
-                            elif "pdf" in error_msg:
-                                log(f"Skipping large PDF: {url}")
                             else:
                                 log(f"Error scraping {url}: {scrape_error}")
                             continue
