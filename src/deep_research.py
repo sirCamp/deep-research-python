@@ -358,7 +358,13 @@ async def write_final_report(
     learnings_with_provenance: Optional[List[Dict[str, Any]]] = None
 ) -> str:
     """Write final research report"""
-    
+
+    log(f"DEBUG: write_final_report called with {len(learnings)} learnings, {len(visited_urls)} URLs")
+
+    if not learnings:
+        log("WARNING: No learnings to generate report from!")
+        return "No research findings to generate a report."
+
     learnings_string = "\n".join([f"<learning>\n{learning}\n</learning>" for learning in learnings])
     
     report_prompt = trim_prompt(
@@ -377,11 +383,17 @@ async def write_final_report(
     }
     
     try:
+        log(f"DEBUG: Generating report with {len(learnings)} learnings...")
         response = generate_object(system_prompt(), report_prompt, schema)
-        
+        log(f"DEBUG: Raw response type: {type(response)}")
+        log(f"DEBUG: Raw response: {str(response)[:500]}...")
+
         result = parse_response(response)
-        
+        log(f"DEBUG: Parsed result type: {type(result)}")
+        log(f"DEBUG: Parsed result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+
         report = result.get("report_markdown", "")
+        log(f"DEBUG: Report length: {len(report)} chars")
 
         # Append sources
         urls_section = f"\n\n## Sources\n\n" + "\n".join([f"- {url}" for url in visited_urls])
