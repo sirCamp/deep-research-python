@@ -122,18 +122,25 @@ def should_skip_url(url: str) -> bool:
     return ext in SKIP_EXTENSIONS
 
 
-def extract_text_from_pdf(content: bytes) -> str:
-    """Extract text from PDF bytes."""
+def extract_text_from_pdf(content: bytes, max_pages: int = 5) -> str:
+    """Extract text from PDF bytes, limited to max_pages."""
     try:
         from pypdf import PdfReader
         from io import BytesIO
 
         reader = PdfReader(BytesIO(content))
+        total_pages = len(reader.pages)
+        pages_to_read = min(total_pages, max_pages)
+
         text_parts = []
-        for page in reader.pages:
-            text = page.extract_text()
+        for i in range(pages_to_read):
+            text = reader.pages[i].extract_text()
             if text:
                 text_parts.append(text)
+
+        if total_pages > max_pages:
+            log(f"PDF has {total_pages} pages, extracted first {max_pages}")
+
         return "\n\n".join(text_parts)
     except Exception as e:
         log(f"Error extracting PDF text: {e}")
