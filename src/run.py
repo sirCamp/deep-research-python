@@ -9,7 +9,7 @@ env_path = project_root / ".env.local"
 load_dotenv(env_path)
 
 # Now import the modules that depend on environment variables
-from .ai.providers import get_model
+from .ai.providers import get_active_provider
 from .deep_research import deep_research, write_final_answer, write_final_report
 from .feedback import generate_feedback
 
@@ -21,10 +21,10 @@ def log(*args):
 async def run():
     """Main function to run the research agent"""
     try:
-        client, model_name = get_model()
-        print(f"Using model: {model_name}")
+        provider_info = get_active_provider()
+        print(f"Using provider: {provider_info}")
     except Exception as e:
-        print(f"Error initializing model: {e}")
+        print(f"Error initializing provider: {e}")
         return
     
     # Get initial query

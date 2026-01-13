@@ -16,7 +16,7 @@ project_root = Path(__file__).parent.parent
 env_path = project_root / ".env.local"
 load_dotenv(env_path)
 
-from .ai.providers import get_model
+from .ai.providers import get_model, get_active_provider
 from .deep_research import deep_research, write_final_answer, write_final_report
 from .feedback import generate_feedback
 
@@ -41,9 +41,9 @@ def log_to_queue(session_id, message_type, message):
 async def run_research(session_id, query, breadth, depth, is_report):
     """Run the research in the background"""
     try:
-        # Initialize model
-        client, model_name = get_model()
-        log_to_queue(session_id, 'info', f'Using model: {model_name}')
+        # Log active provider
+        provider_info = get_active_provider()
+        log_to_queue(session_id, 'info', f'Using provider: {provider_info}')
         
         log_to_queue(session_id, 'info', f'Starting research with breadth={breadth}, depth={depth}')
         

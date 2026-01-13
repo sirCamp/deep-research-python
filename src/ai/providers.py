@@ -252,8 +252,12 @@ def parse_structured_response(response):
 # Initialize global provider
 _ai_provider = AIProvider()
 
-def get_model() -> tuple[OpenAI, str]:
-    """Get the current model client and name"""
+def get_model() -> tuple[Optional[OpenAI], str]:
+    """Get the current model client and name.
+
+    Returns:
+        tuple: (client, model_name) where client may be None for Bedrock provider
+    """
     return _ai_provider.get_model()
 
 def generate_object(system_prompt: str, user_prompt: str, schema: dict, timeout: int = 60):
